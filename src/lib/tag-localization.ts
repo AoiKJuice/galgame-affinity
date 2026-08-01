@@ -8,6 +8,8 @@ const hiddenTags = new Set([
 
 export function localizeTag(tag: string): string | null {
   if (hiddenTags.has(tag)) return null;
+  const decade = /^(\d{4})s$/.exec(tag);
+  if (decade) return `${decade[1]}年代`;
   if (/\p{Script=Han}/u.test(tag)) return tag;
   const translated = translations[tag];
   if (!translated || /[A-Za-z]{3}/.test(translated)) return null;
