@@ -1,21 +1,20 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-test("本地模型、片库搜索、评分与推荐流程", async ({ page }) => {
+test("本地模型、作品库搜索、评分与推荐流程", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "安装演示模型" }).click();
   await expect(page.getByRole("heading", { name: "建立本地资料" })).toBeVisible();
 
-  await page.getByLabel("资料名称").fill("测试资料");
-  await page.getByRole("button", { name: "进入游鉴" }).click();
-  await expect(page.getByRole("heading", { name: "测试资料" })).toBeVisible();
+  await page.getByRole("button", { name: "进入 GAL鉴赏" }).click();
+  await expect(page.getByRole("heading", { name: "本地资料" })).toBeVisible();
 
-  for (const [title, score] of [["CLANNAD", "10"], ["Little Busters", "9"], ["Summer Pockets", "9.5"]]) {
-    const search = page.getByRole("textbox", { name: "搜索全部 Galgame" });
+  for (const [title, score] of [["CLANNAD", "10"], ["Little Busters", "9"], ["Summer Pockets", "9"]]) {
+    const search = page.getByRole("textbox", { name: "搜索完整作品库并添加" });
     await search.fill(title);
     await page.locator(".search-results button").first().click();
     await page.locator(".dialog input[type=number]").fill(score);
-    await page.getByRole("button", { name: "保存" }).click();
+    await page.getByRole("button", { name: "添加作品" }).click();
   }
 
   await page.getByRole("button", { name: "推荐", exact: true }).click();

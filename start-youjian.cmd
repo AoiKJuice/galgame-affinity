@@ -11,7 +11,7 @@ if not exist node_modules (
 )
 
 start "" powershell.exe -NoProfile -WindowStyle Hidden -Command "$url='http://localhost:5173'; for($i=0;$i -lt 120;$i++){try{$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 1 $url;if($r.StatusCode -eq 200){Start-Process $url;exit 0}}catch{};Start-Sleep -Milliseconds 500};exit 1"
-echo 游鉴启动中。这个窗口关闭后，本地网页也会停止。
+echo GAL鉴赏启动中。这个窗口关闭后，本地网页也会停止。
 call npm run dev
 if errorlevel 1 goto failed
 exit /b 0

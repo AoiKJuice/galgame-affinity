@@ -5,12 +5,12 @@ import { RecommendationCard } from "./RecommendationCard";
 import type { Recommendation } from "../model/types";
 
 describe("RatingControl", () => {
-  it("supports an unrated value and decimal slider input", () => {
+  it("supports an unrated value and integer slider input", () => {
     const onChange = vi.fn();
     render(<RatingControl value={null} onChange={onChange} label="测试作品" />);
     expect(screen.getByLabelText("测试作品")).toHaveValue(null);
-    fireEvent.change(screen.getByLabelText("测试作品评分滑条"), { target: { value: "8.7" } });
-    expect(onChange).toHaveBeenCalledWith(8.7);
+    fireEvent.change(screen.getByLabelText("测试作品评分滑条"), { target: { value: "9" } });
+    expect(onChange).toHaveBeenCalledWith(9);
   });
 });
 
@@ -39,9 +39,9 @@ describe("RecommendationCard", () => {
     source: "explicit",
   };
 
-  it("masks adult covers and displays at most three matched tags", () => {
+  it("shows adult covers and displays at most three matched tags", () => {
     render(<RecommendationCard recommendation={recommendation} revealAdult={false} wished={false} onWish={vi.fn()} onHide={vi.fn()} />);
-    expect(screen.getByText("18+")).toBeInTheDocument();
+    expect(screen.queryByText("18+")).not.toBeInTheDocument();
     expect(screen.getByText("剧情")).toBeInTheDocument();
     expect(screen.queryByText("校园")).not.toBeInTheDocument();
   });

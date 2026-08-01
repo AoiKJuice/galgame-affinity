@@ -36,21 +36,11 @@ import {
 import type {
   CatalogEntry,
   LibraryEntry,
-  LibraryStatus,
   ModelManifest,
   Profile,
   Recommendation,
   WorkerResponse,
 } from "./model/types";
-
-const STATUS_LABELS: Record<LibraryStatus, string> = {
-  playing: "游玩中",
-  finished: "已完成",
-  stalled: "搁置",
-  dropped: "放弃",
-  wishlist: "计划游玩",
-  blacklist: "不感兴趣",
-};
 
 const DEMO_MODEL_MANIFEST = `${import.meta.env.BASE_URL}model/demo/manifest.json`;
 const STANDARD_MODEL_MANIFEST = "https://raw.githubusercontent.com/AoiKJuice/galgame-affinity-models/main/standard/manifest.json";
@@ -101,7 +91,6 @@ function Onboarding({ catalog, onDone }: { catalog: CatalogEntry[]; onDone: (pro
   const [working, setWorking] = useState(false);
   const results = useMemo(() => query.trim().length >= 2 ? catalog.filter((item) => `${item.title} ${item.titleNative || ""}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 12) : [], [catalog, query]);
   const finish = async () => {
-    if (!name.trim()) { setError("请输入资料名称"); return; }
     setWorking(true);
     setError("");
     try {
@@ -109,7 +98,7 @@ function Onboarding({ catalog, onDone }: { catalog: CatalogEntry[]; onDone: (pro
       if (source === "vndb") ratings = (await importVndb(username, catalog)).mapped;
       if (source === "bangumi") ratings = (await importBangumi(username, catalog)).mapped;
       const now = new Date().toISOString();
-      await onDone({ id: randomId(), name: name.trim(), createdAt: now, updatedAt: now }, ratings);
+      await onDone({ id: randomId(), name: name.trim() || "本地资料", createdAt: now, updatedAt: now }, ratings);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "建立资料失败");
     } finally {
@@ -120,7 +109,7 @@ function Onboarding({ catalog, onDone }: { catalog: CatalogEntry[]; onDone: (pro
     <div className="onboarding-page">
       <section className="onboarding-panel">
         <h1>建立本地资料</h1>
-        <label className="field"><span>资料名称</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：我的 Galgame" /></label>
+        <label className="field"><span>资料名称（选填）</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="留空则使用“本地资料”" /></label>
         <div className="source-tabs" role="tablist" aria-label="评分来源">
           {(["manual", "vndb", "bangumi"] as const).map((value) => <button type="button" role="tab" aria-selected={source === value} className={source === value ? "active" : ""} onClick={() => setSource(value)} key={value}>{value === "manual" ? "手动评分" : value.toUpperCase()}</button>)}
         </div>
@@ -132,7 +121,7 @@ function Onboarding({ catalog, onDone }: { catalog: CatalogEntry[]; onDone: (pro
                 const entry = manual.find((value) => value.vndbId === item.id);
                 return (
                   <div className="manual-item" key={item.id}>
-                    <Cover item={item} revealAdult={false} compact />
+                    <Cover item={item} />
                     <strong>{item.title}</strong>
                     {entry ? (
                       <RatingControl value={entry.score} label={item.title} onChange={(score) => setManual((current) => current.map((value) => value.vndbId === item.id ? { ...value, score } : value))} />
@@ -148,25 +137,21 @@ function Onboarding({ catalog, onDone }: { catalog: CatalogEntry[]; onDone: (pro
           <label className="field"><span>{source === "vndb" ? "VNDB 用户名" : "Bangumi 用户名"}</span><input value={username} onChange={(event) => setUsername(event.target.value)} /></label>
         )}
         {error && <div className="inline-error">{error}</div>}
-        <button className="primary-button" type="button" onClick={finish} disabled={working || (source !== "manual" && !username.trim())}>{working ? "正在导入" : "进入游鉴"}</button>
+        <button className="primary-button" type="button" onClick={finish} disabled={working || (source !== "manual" && !username.trim())}>{working ? "正在导入" : "进入 GAL鉴赏"}</button>
       </section>
     </div>
   );
 }
 
 function AddDialog({ item, onClose, onSave }: { item: CatalogEntry; onClose: () => void; onSave: (entry: LibraryEntry) => void }) {
-  const [status, setStatus] = useState<LibraryStatus>("finished");
   const [score, setScore] = useState<number | null>(null);
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="add-title">
         <button className="dialog-close" type="button" onClick={onClose} aria-label="关闭"><X /></button>
-        <h2 id="add-title">{item.title}</h2>
-        <div className="status-grid" role="group" aria-label="游玩状态">
-          {(Object.keys(STATUS_LABELS) as LibraryStatus[]).map((value) => <button key={value} type="button" className={status === value ? "active" : ""} onClick={() => { setStatus(value); if (value === "wishlist") setScore(null); }}>{STATUS_LABELS[value]}</button>)}
-        </div>
+        <div className="dialog-title-row"><Cover item={item} compact /><h2 id="add-title">{item.title}</h2></div>
         <RatingControl value={score} onChange={setScore} label={item.title} />
-        <button className="primary-button" type="button" onClick={() => onSave({ vndbId: item.id, title: item.title, score, status, source: "manual", updatedAt: new Date().toISOString() })}><Check />保存</button>
+        <button className="primary-button" type="button" onClick={() => onSave({ vndbId: item.id, title: item.title, score, status: "finished", source: "manual", updatedAt: new Date().toISOString() })}><Check />添加作品</button>
       </section>
     </div>
   );
@@ -210,22 +195,24 @@ function LibraryPage({ ratings, catalogMap, collections, revealAdult, onChange, 
     : ids.map((id) => ({ vndbId: id, title: catalogMap.get(id)?.title || `v${id}`, score: null, status: tab === "wishlist" ? "wishlist" as const : "blacklist" as const, source: "manual" as const, updatedAt: "" })).filter((entry) => entry.title.toLowerCase().includes(query.toLowerCase()));
   return (
     <div className="page">
-      <header className="page-header"><h1>片库</h1><input className="page-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索本地资料" /></header>
+      <header className="page-header"><h1>作品库</h1><input className="page-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索作品库" /></header>
       <div className="source-tabs library-tabs">
-        <button className={tab === "ratings" ? "active" : ""} type="button" onClick={() => setTab("ratings")}>观看记录 {ratings.length}</button>
+        <button className={tab === "ratings" ? "active" : ""} type="button" onClick={() => setTab("ratings")}>我的作品 {ratings.length}</button>
         <button className={tab === "wishlist" ? "active" : ""} type="button" onClick={() => setTab("wishlist")}>想玩 {collections.wishlist.length}</button>
         <button className={tab === "hidden" ? "active" : ""} type="button" onClick={() => setTab("hidden")}>不感兴趣 {collections.hidden.length}</button>
       </div>
-      <div className="library-list">
+      <div className="library-grid">
         {rows.map((entry) => {
           const item = catalogMap.get(entry.vndbId);
           if (!item) return null;
           return (
-            <article className="library-row" key={entry.vndbId}>
-              <Cover item={item} revealAdult={revealAdult} compact />
-              <div className="library-title"><strong>{entry.title}</strong><span>{STATUS_LABELS[entry.status]}</span></div>
-              {tab === "ratings" && <RatingControl value={entry.score} label={entry.title} onChange={(score) => onChange({ ...entry, score, updatedAt: new Date().toISOString() })} />}
-              <button className="icon-button" type="button" onClick={() => onRemove(entry.vndbId)} aria-label={`删除${entry.title}`}><Trash /></button>
+            <article className="library-card" key={entry.vndbId}>
+              <Cover item={item} revealAdult={revealAdult} />
+              <div className="library-card-body">
+                <strong title={entry.title}>{entry.title}</strong>
+                {tab === "ratings" && <RatingControl value={entry.score} label={entry.title} onChange={(score) => onChange({ ...entry, score, updatedAt: new Date().toISOString() })} />}
+                <button className="library-remove" type="button" onClick={() => onRemove(entry.vndbId)} aria-label={`删除${entry.title}`}><Trash />移除</button>
+              </div>
             </article>
           );
         })}
@@ -281,7 +268,7 @@ function ModelPage({ manifest, onInstall }: { manifest: ModelManifest | null; on
       {manifest && <section className="model-current"><Database weight="duotone" /><div><strong>{manifest.tier === "demo" ? "演示模型" : manifest.tier === "standard" ? "手机标准模型" : "桌面完整模型"}</strong><span>{manifest.modelVersion}</span></div><Check weight="bold" /></section>}
       <div className="model-options">
         <button type="button" onClick={() => install(DEMO_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>演示模型</strong><span>快速体验</span></button>
-        <button type="button" onClick={() => install(STANDARD_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>手机标准模型</strong><span>完整片库</span></button>
+        <button type="button" onClick={() => install(STANDARD_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>手机标准模型</strong><span>完整作品库</span></button>
         <button type="button" onClick={() => install(FULL_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>桌面完整模型</strong><span>完整精度</span></button>
       </div>
       {progress && <progress value={progress.received} max={progress.total} aria-label="模型安装进度" />}
@@ -290,14 +277,12 @@ function ModelPage({ manifest, onInstall }: { manifest: ModelManifest | null; on
   );
 }
 
-function SettingsPage({ profiles, activeProfile, theme, revealAdult, catalog, onTheme, onRevealAdult, onCreate, onActivate, onDelete, onImport }: {
+function SettingsPage({ profiles, activeProfile, theme, catalog, onTheme, onCreate, onActivate, onDelete, onImport }: {
   profiles: Profile[];
   activeProfile: Profile;
   theme: "light" | "dark";
-  revealAdult: boolean;
   catalog: CatalogEntry[];
   onTheme: (theme: "light" | "dark") => void;
-  onRevealAdult: (value: boolean) => void;
   onCreate: (name: string) => void;
   onActivate: (id: string) => void;
   onDelete: (id: string) => void;
@@ -322,8 +307,7 @@ function SettingsPage({ profiles, activeProfile, theme, revealAdult, catalog, on
   return (
     <div className="page"><header className="page-header"><h1>设置</h1></header>
       <section className="settings-section"><h2>主题</h2><div className="choice-row"><button className={theme === "light" ? "active" : ""} type="button" onClick={() => onTheme("light")}><Sun />浅色</button><button className={theme === "dark" ? "active" : ""} type="button" onClick={() => onTheme("dark")}><Moon />深色</button></div></section>
-      <section className="settings-section"><h2>成人内容</h2><button className={`toggle-button ${revealAdult ? "active" : ""}`} type="button" aria-pressed={revealAdult} onClick={() => onRevealAdult(!revealAdult)}>{revealAdult ? "已确认年满 18 岁" : "封面已隐藏"}</button></section>
-      <section className="settings-section"><h2>本地资料</h2><div className="profile-list">{profiles.map((profile) => <div key={profile.id}><button className={profile.id === activeProfile.id ? "profile-name active" : "profile-name"} type="button" onClick={() => onActivate(profile.id)}>{profile.name}</button>{profile.id === activeProfile.id ? <span>当前</span> : null}<button className="icon-button" type="button" onClick={() => onDelete(profile.id)} disabled={profiles.length === 1}><Trash /></button></div>)}</div><div className="inline-form"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="新资料名称" /><button className="secondary-button" type="button" onClick={() => { if (name.trim()) { onCreate(name.trim()); setName(""); } }}><Plus />新建</button></div></section>
+      <section className="settings-section"><h2>本地资料</h2><div className="profile-list">{profiles.map((profile) => <div key={profile.id}><button className={profile.id === activeProfile.id ? "profile-name active" : "profile-name"} type="button" onClick={() => onActivate(profile.id)}>{profile.name || "本地资料"}</button>{profile.id === activeProfile.id ? <span>当前</span> : null}<button className="icon-button" type="button" onClick={() => onDelete(profile.id)} disabled={profiles.length === 1}><Trash /></button></div>)}</div><div className="inline-form"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="资料名称（选填）" /><button className="secondary-button" type="button" onClick={() => { onCreate(name.trim()); setName(""); }}><Plus />新建</button></div></section>
       <section className="settings-section"><h2>导入评分</h2><div className="choice-row"><button className={source === "vndb" ? "active" : ""} type="button" onClick={() => setSource("vndb")}>VNDB</button><button className={source === "bangumi" ? "active" : ""} type="button" onClick={() => setSource("bangumi")}>Bangumi</button></div><div className="inline-form"><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" /><button className="secondary-button" type="button" onClick={runImport} disabled={!username.trim()}><UploadSimple />导入</button></div>{error && <div className="inline-error">{error}</div>}</section>
       {unmapped.length > 0 && <section className="settings-section"><h2>待关联 {unmapped.length}</h2><div className="mapping-list">{unmapped.slice(0, 50).map((sourceItem) => {
         const query = mappingQueries[sourceItem.sourceId] || "";
@@ -344,7 +328,6 @@ export default function App() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [page, setPage] = useState<Page>("dashboard");
   const [theme, setTheme] = useState<"light" | "dark">("dark");
-  const [revealAdult, setRevealAdult] = useState(false);
   const [addItem, setAddItem] = useState<CatalogEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommending, setRecommending] = useState(false);
@@ -373,16 +356,14 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
-      const [storedProfiles, storedTheme, adult, storedProfile] = await Promise.all([
+      const [storedProfiles, storedTheme, storedProfile] = await Promise.all([
         listProfiles(),
         getPreference<"light" | "dark">("theme", matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
-        getPreference("revealAdult", false),
         getPreference<string | null>("activeProfile", null),
       ]);
       setProfiles(storedProfiles);
       setProfileId(storedProfiles.some((profile) => profile.id === storedProfile) ? storedProfile : storedProfiles[0]?.id || null);
       setTheme(storedTheme);
-      setRevealAdult(adult);
       await loadModel();
     })();
     return () => worker.current?.terminate();
@@ -457,13 +438,13 @@ export default function App() {
 
   return (
     <>
-      <AppShell page={page} onPage={setPage} profile={activeProfile} profiles={profiles} onProfile={(id) => { setProfileId(id); void setPreference("activeProfile", id); }} catalog={catalog} onAdd={setAddItem}>
-        {page === "dashboard" && <Dashboard profile={activeProfile} ratings={ratings} recommendations={recommendations} catalogMap={catalogMap} revealAdult={revealAdult} onRecommend={() => { setPage("recommendations"); void generateRecommendations(); }} />}
-        {page === "recommendations" && <RecommendationsPage recommendations={recommendations} collections={collections} revealAdult={revealAdult} onWish={(id) => void persistCollections({ ...collections, wishlist: collections.wishlist.includes(id) ? collections.wishlist.filter((value) => value !== id) : [...collections.wishlist, id] })} onHide={(id) => void hideRecommendation(id)} onRefresh={() => void generateRecommendations()} loading={recommending} />}
-        {page === "library" && <LibraryPage ratings={ratings} catalogMap={catalogMap} collections={collections} revealAdult={revealAdult} onChange={(entry) => void saveEntry(entry)} onRemove={(id) => void removeEntry(id)} />}
+      <AppShell page={page} onPage={setPage} profile={activeProfile} profiles={profiles} onProfile={(id) => { setProfileId(id); void setPreference("activeProfile", id); }} catalog={catalog} onAdd={setAddItem} theme={theme} onToggleTheme={() => { const value = theme === "light" ? "dark" : "light"; setTheme(value); void setPreference("theme", value); }}>
+        {page === "dashboard" && <Dashboard profile={activeProfile} ratings={ratings} recommendations={recommendations} catalogMap={catalogMap} revealAdult onRecommend={() => { setPage("recommendations"); void generateRecommendations(); }} />}
+        {page === "recommendations" && <RecommendationsPage recommendations={recommendations} collections={collections} revealAdult onWish={(id) => void persistCollections({ ...collections, wishlist: collections.wishlist.includes(id) ? collections.wishlist.filter((value) => value !== id) : [...collections.wishlist, id] })} onHide={(id) => void hideRecommendation(id)} onRefresh={() => void generateRecommendations()} loading={recommending} />}
+        {page === "library" && <LibraryPage ratings={ratings} catalogMap={catalogMap} collections={collections} revealAdult onChange={(entry) => void saveEntry(entry)} onRemove={(id) => void removeEntry(id)} />}
         {page === "insights" && <Insights ratings={ratings} catalogMap={catalogMap} />}
         {page === "model" && <ModelPage manifest={model} onInstall={async (url, callback) => { await installModel(url, callback); await loadModel(); setRecommendations([]); }} />}
-        {page === "settings" && <SettingsPage profiles={profiles} activeProfile={activeProfile} theme={theme} revealAdult={revealAdult} catalog={catalog} onTheme={(value) => { setTheme(value); void setPreference("theme", value); }} onRevealAdult={(value) => { setRevealAdult(value); void setPreference("revealAdult", value); }} onCreate={(name) => { const now = new Date().toISOString(); const profile = { id: randomId(), name, createdAt: now, updatedAt: now }; void saveProfile(profile); setProfiles((current) => [...current, profile]); setProfileId(profile.id); void setPreference("activeProfile", profile.id); }} onActivate={(id) => { setProfileId(id); void setPreference("activeProfile", id); }} onDelete={(id) => { void deleteProfile(id); const next = profiles.filter((profile) => profile.id !== id); setProfiles(next); if (profileId === id) { const nextId = next[0]?.id || null; setProfileId(nextId); void setPreference("activeProfile", nextId); } }} onImport={(entries) => { void saveRatings(activeProfile.id, entries); setRatings((current) => [...current.filter((entry) => !entries.some((value) => value.vndbId === entry.vndbId)), ...entries]); }} />}
+        {page === "settings" && <SettingsPage profiles={profiles} activeProfile={activeProfile} theme={theme} catalog={catalog} onTheme={(value) => { setTheme(value); void setPreference("theme", value); }} onCreate={(name) => { const now = new Date().toISOString(); const profile = { id: randomId(), name: name || `本地资料 ${profiles.length + 1}`, createdAt: now, updatedAt: now }; void saveProfile(profile); setProfiles((current) => [...current, profile]); setProfileId(profile.id); void setPreference("activeProfile", profile.id); }} onActivate={(id) => { setProfileId(id); void setPreference("activeProfile", id); }} onDelete={(id) => { void deleteProfile(id); const next = profiles.filter((profile) => profile.id !== id); setProfiles(next); if (profileId === id) { const nextId = next[0]?.id || null; setProfileId(nextId); void setPreference("activeProfile", nextId); } }} onImport={(entries) => { void saveRatings(activeProfile.id, entries); setRatings((current) => [...current.filter((entry) => !entries.some((value) => value.vndbId === entry.vndbId)), ...entries]); }} />}
       </AppShell>
       {addItem && <AddDialog item={addItem} onClose={() => setAddItem(null)} onSave={(entry) => void saveEntry(entry)} />}
       {undo && <div className="undo-toast" role="status"><span>已标记不感兴趣</span><button type="button" onClick={() => void undoHidden()}>撤回</button></div>}

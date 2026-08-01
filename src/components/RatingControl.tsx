@@ -8,15 +8,15 @@ export function RatingControl({ value, onChange, label = "评分" }: { value: nu
         id={`rating-${label}`}
         className="rating-number"
         type="number"
-        inputMode="decimal"
+        inputMode="numeric"
         min="1"
         max="10"
-        step="0.1"
+        step="1"
         value={value ?? ""}
         placeholder="-"
         onChange={(event) => {
           const parsed = Number(event.target.value);
-          onChange(event.target.value === "" || Number.isNaN(parsed) ? null : Math.min(10, Math.max(1, parsed)));
+          onChange(event.target.value === "" || Number.isNaN(parsed) ? null : Math.round(Math.min(10, Math.max(1, parsed))));
         }}
       />
       <span className="rating-denominator">/10</span>
@@ -26,7 +26,7 @@ export function RatingControl({ value, onChange, label = "评分" }: { value: nu
         type="range"
         min="1"
         max="10"
-        step="0.1"
+        step="1"
         value={value ?? 1}
         onChange={(event) => onChange(Number(event.target.value))}
       />
