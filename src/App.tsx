@@ -52,6 +52,9 @@ const STATUS_LABELS: Record<LibraryStatus, string> = {
   blacklist: "不感兴趣",
 };
 
+const STANDARD_MODEL_MANIFEST = "https://github.com/AoiKJuice/galgame-affinity/releases/download/model-standard-vndb-2026.07.31-mf1-status1/manifest.json";
+const FULL_MODEL_MANIFEST = "https://github.com/AoiKJuice/galgame-affinity/releases/download/model-full-vndb-2026.07.31-mf1-status1/manifest.json";
+
 function randomId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
@@ -277,8 +280,8 @@ function ModelPage({ manifest, onInstall }: { manifest: ModelManifest | null; on
       {manifest && <section className="model-current"><Database weight="duotone" /><div><strong>{manifest.tier === "demo" ? "演示模型" : manifest.tier === "standard" ? "手机标准模型" : "桌面完整模型"}</strong><span>{manifest.modelVersion}</span></div><Check weight="bold" /></section>}
       <div className="model-options">
         <button type="button" onClick={() => install("/model/demo/manifest.json")} disabled={working}><DownloadSimple /><strong>演示模型</strong><span>快速体验</span></button>
-        <button type="button" onClick={() => install("/model/standard/manifest.json")} disabled={working}><DownloadSimple /><strong>手机标准模型</strong><span>完整片库</span></button>
-        <button type="button" onClick={() => install("/model/full/manifest.json")} disabled={working}><DownloadSimple /><strong>桌面完整模型</strong><span>完整精度</span></button>
+        <button type="button" onClick={() => install(STANDARD_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>手机标准模型</strong><span>完整片库</span></button>
+        <button type="button" onClick={() => install(FULL_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>桌面完整模型</strong><span>完整精度</span></button>
       </div>
       {progress && <progress value={progress.received} max={progress.total} aria-label="模型安装进度" />}
       {error && <div className="inline-error">{error}</div>}
