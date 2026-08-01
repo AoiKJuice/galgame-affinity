@@ -11,7 +11,7 @@ npm run dev
 
 打开 `http://localhost:5173`。仓库内附带小型演示模型，完整模型由训练工具构建后发布为独立分块文件。Windows 也可双击 `启动游鉴.cmd`。
 
-应用内“本地模型”页面可直接从 GitHub Releases 安装手机标准包或桌面完整包，无需手动解压。首次进入先安装仓库自带的演示包。
+应用内“本地模型”页面可直接从 [模型分块仓库](https://github.com/AoiKJuice/galgame-affinity-models) 安装手机标准包或桌面完整包，无需手动解压。GitHub Releases 同时提供离线压缩包。首次进入先安装仓库自带的演示包。
 
 ## 训练
 

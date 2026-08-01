@@ -52,8 +52,8 @@ const STATUS_LABELS: Record<LibraryStatus, string> = {
   blacklist: "不感兴趣",
 };
 
-const STANDARD_MODEL_MANIFEST = "https://github.com/AoiKJuice/galgame-affinity/releases/download/model-standard-vndb-2026.07.31-mf1-status1/manifest.json";
-const FULL_MODEL_MANIFEST = "https://github.com/AoiKJuice/galgame-affinity/releases/download/model-full-vndb-2026.07.31-mf1-status1/manifest.json";
+const STANDARD_MODEL_MANIFEST = "https://raw.githubusercontent.com/AoiKJuice/galgame-affinity-models/main/standard/manifest.json";
+const FULL_MODEL_MANIFEST = "https://raw.githubusercontent.com/AoiKJuice/galgame-affinity-models/main/full/manifest.json";
 
 function randomId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
