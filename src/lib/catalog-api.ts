@@ -2,6 +2,7 @@ import type { CatalogEntry } from "../model/types";
 
 const VNDB_API = "https://api.vndb.org/kana/vn";
 const detailCache = new Map<number, VndbDetail>();
+const bangumiMatchCache = new Map<number, BangumiSubject | null>();
 
 export interface VndbDetail {
   id: number;
@@ -23,10 +24,15 @@ export interface VndbDetail {
 }
 
 export interface BangumiSubject {
+  id?: number;
   name?: string;
   name_cn?: string;
   summary?: string;
   images?: { large?: string; common?: string; medium?: string };
+}
+
+interface BangumiSearchResponse {
+  list?: BangumiSubject[];
 }
 
 interface RawVndb {
@@ -134,6 +140,77 @@ export async function fetchBangumiSubject(id: number): Promise<BangumiSubject | 
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Bangumi 请求失败（${response.status}）`);
   return response.json() as Promise<BangumiSubject>;
+}
+
+function normalizeTitle(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, "");
+}
+
+function matchScore(subject: BangumiSubject, names: string[]): number {
+  const candidates = [subject.name_cn, subject.name].filter((value): value is string => Boolean(value)).map(normalizeTitle);
+  const normalizedNames = names.filter(Boolean).map(normalizeTitle);
+  let score = 0;
+  for (const source of normalizedNames) {
+    for (const candidate of candidates) {
+      if (source === candidate) score = Math.max(score, 100);
+      else if (source.length >= 5 && (candidate.includes(source) || source.includes(candidate))) score = Math.max(score, 70 - Math.abs(source.length - candidate.length));
+    }
+  }
+  if (subject.name_cn && /[\u3400-\u9fff]/u.test(subject.summary || "")) score += 10;
+  return score;
+}
+
+async function searchBangumiLegacy(keyword: string): Promise<BangumiSubject[]> {
+  const response = await fetch(`https://api.bgm.tv/search/subject/${encodeURIComponent(keyword)}?type=4&responseGroup=large&max_results=12`);
+  if (!response.ok) return [];
+  const payload = await response.json() as BangumiSearchResponse;
+  return payload.list || [];
+}
+
+export async function fetchBangumiForItem(item: CatalogEntry): Promise<BangumiSubject | null> {
+  if (bangumiMatchCache.has(item.id)) return bangumiMatchCache.get(item.id) || null;
+
+  for (const id of item.bangumiIds || []) {
+    try {
+      const subject = await fetchBangumiSubject(id);
+      if (subject?.summary) {
+        bangumiMatchCache.set(item.id, subject);
+        return subject;
+      }
+    } catch {
+      // Continue with title matching.
+    }
+  }
+
+  const names = [item.titleNative || "", item.title, item.titleEnglish || "", ...(item.aliases || [])];
+  const baseTitles = names.flatMap((name) => name
+    .split(/[~～:：\-‐‑–—]/u)
+    .map((value) => value.trim())
+    .filter((value) => normalizeTitle(value).length >= 5 && [...value].some((character) => (character.codePointAt(0) || 0) > 127)));
+  const queries = Array.from(new Set([...baseTitles, ...names.filter(Boolean)])).slice(0, 5);
+  let best: BangumiSubject | null = null;
+  let bestScore = 0;
+  for (const query of queries) {
+    try {
+      const results = await searchBangumiLegacy(query);
+      for (const subject of results) {
+        const score = matchScore(subject, names);
+        if (score > bestScore && subject.summary) {
+          best = subject;
+          bestScore = score;
+        }
+      }
+      if (bestScore >= 100) break;
+    } catch {
+      // Try another known title.
+    }
+  }
+  const result = bestScore >= 55 ? best : null;
+  bangumiMatchCache.set(item.id, result);
+  return result;
 }
 
 export async function resolveCover(item: CatalogEntry): Promise<string | null> {

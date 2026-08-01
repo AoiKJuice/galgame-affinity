@@ -8,6 +8,8 @@ import {
   Database,
   DownloadSimple,
   EyeSlash,
+  ChartLineUp,
+  Compass,
   Moon,
   Plus,
   Sparkle,
@@ -23,7 +25,7 @@ import { RecommendationCard } from "./components/RecommendationCard";
 import { importBangumi, importVndb, type ImportResult } from "./lib/imports";
 import { searchCatalogEntries } from "./lib/catalog-search";
 import { useCatalogSearch } from "./lib/use-catalog-search";
-import { fetchBangumiSubject, fetchVndbDetails, type BangumiSubject, type VndbDetail } from "./lib/catalog-api";
+import { fetchBangumiForItem, fetchVndbDetails, type BangumiSubject, type VndbDetail } from "./lib/catalog-api";
 import { localizeTags } from "./lib/tag-localization";
 import { useVndbDetails } from "./lib/use-vndb-details";
 import { installModel, loadActivePackages, loadSearchCatalog, type InstallProgress } from "./lib/model-manager";
@@ -276,8 +278,7 @@ function DetailPage({ item, catalogMap, rating, recommendation, wished, hidden, 
     void fetchVndbDetails([item.id]).then((value) => {
       if (active) setMetadata((current) => ({ id: item.id, detail: value.get(item.id) || null, bangumi: current.id === item.id ? current.bangumi : null }));
     }).catch(() => undefined);
-    const bangumiId = item.bangumiIds?.[0];
-    if (bangumiId) void fetchBangumiSubject(bangumiId).then((value) => {
+    void fetchBangumiForItem(item).then((value) => {
       if (active) setMetadata((current) => ({ id: item.id, detail: current.id === item.id ? current.detail : null, bangumi: value }));
     }).catch(() => undefined);
     return () => { active = false; };
@@ -324,41 +325,80 @@ function DetailPage({ item, catalogMap, rating, recommendation, wished, hidden, 
           <RatingControl value={rating?.score ?? null} label={item.title} onChange={onScore} />
         </aside>
       </section>
-      {relations.length > 0 && <section className="detail-relations"><h2>关联作品</h2><div>{relations.filter((value) => value.official).slice(0, 12).map((relation) => <button type="button" key={`${relation.id}-${relation.type}`} onClick={() => openRelation(relation)}><strong>{relation.title}</strong><span>{relation.type.toUpperCase()}</span></button>)}</div></section>}
+      {relations.length > 0 && <section className="detail-relations"><h2>关联作品</h2><div>{relations.filter((value) => value.official).slice(0, 12).map((relation) => <button type="button" key={`${relation.id}-${relation.type}`} onClick={() => openRelation(relation)}><strong>{relation.title}</strong><span>{relationLabel(relation.type)}</span></button>)}</div></section>}
     </div>
   );
+}
+
+const RELATION_LABELS: Record<string, string> = {
+  seq: "续作",
+  preq: "前作",
+  set: "同一世界观",
+  ser: "同系列",
+  fan: "Fan Disc",
+  side: "外传",
+  alt: "另一版本",
+  char: "共享角色",
+  par: "母篇",
+  orig: "原作",
+};
+
+function relationLabel(value: string): string {
+  return RELATION_LABELS[value.toLowerCase()] || "相关作品";
 }
 
 function Dashboard({ profile, ratings, recommendations, catalogMap, revealAdult, onRecommend }: { profile: Profile; ratings: LibraryEntry[]; recommendations: Recommendation[]; catalogMap: Map<number, CatalogEntry>; revealAdult: boolean; onRecommend: () => void }) {
   const scored = ratings.filter((entry) => entry.score !== null);
   const mean = scored.length ? scored.reduce((sum, entry) => sum + (entry.score || 0), 0) / scored.length : 0;
   const std = scored.length ? Math.sqrt(scored.reduce((sum, entry) => sum + ((entry.score || 0) - mean) ** 2, 0) / scored.length) : 0;
+  const histogram = Array.from({ length: 10 }, (_, index) => scored.filter((entry) => Math.round(entry.score || 0) === index + 1).length);
+  const maximum = Math.max(1, ...histogram);
+  const quality = scored.length >= 30 && std >= 0.75 ? "高" : scored.length >= 10 ? "中" : "低";
   return (
     <div className="page dashboard-page">
       <header className="dashboard-heading"><h1>{profile.name}</h1><button className="primary-button" type="button" onClick={onRecommend}><Sparkle weight="fill" />生成推荐</button></header>
-      <section className="metrics-row">
-        <div><strong>{scored.length}</strong><span>有效评分</span></div>
-        <div><strong>{std.toFixed(2)}</strong><span>评分区分度</span></div>
-        <div><strong>{recommendations.length}</strong><span>当前推荐</span></div>
+      <section className="dashboard-lead">
+        <div className="profile-quality"><div className="quality-orbit"><strong>{quality}</strong></div><h2>{quality === "高" ? "评分资料适合生成推荐" : quality === "中" ? "可以生成推荐" : "继续添加评分"}</h2></div>
+        <div className="dashboard-metrics">
+          <div><strong>{scored.length}</strong><span>有效评分</span></div>
+          <div><strong>{std.toFixed(2)}</strong><span>评分区分度</span></div>
+          <div><strong>{recommendations.length}</strong><span>当前推荐</span></div>
+        </div>
       </section>
-      {recommendations.length > 0 && <section className="dashboard-recs"><h2>当前推荐</h2><div>{recommendations.slice(0, 3).map((value) => <article key={value.item.id}><Cover item={value.item} revealAdult={revealAdult} compact /><strong>{value.item.title}</strong>{value.affinity !== null && <span>{value.affinity}</span>}</article>)}</div></section>}
-      <section className="distribution"><h2>评分分布</h2><div className="bars">{Array.from({ length: 10 }, (_, index) => { const count = scored.filter((entry) => Math.round(entry.score || 0) === index + 1).length; const max = Math.max(1, ...Array.from({ length: 10 }, (_v, i) => scored.filter((entry) => Math.round(entry.score || 0) === i + 1).length)); return <div key={index}><span style={{ height: `${Math.max(4, count / max * 100)}%` }} /><b>{index + 1}</b></div>; })}</div></section>
-      <section className="recent-ratings"><h2>最近评分</h2>{ratings.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5).map((entry) => <div key={entry.vndbId}><span>{catalogMap.get(entry.vndbId)?.title || entry.title}</span><strong>{entry.score ?? "-"}</strong></div>)}</section>
+      {recommendations.length > 0 && <section className="dashboard-panel dashboard-recs"><h2>当前推荐</h2><div>{recommendations.slice(0, 3).map((value) => <article key={value.item.id}><Cover item={value.item} revealAdult={revealAdult} compact /><strong>{value.item.title}</strong>{value.affinity !== null && <span>{value.affinity}</span>}</article>)}</div></section>}
+      <div className="dashboard-columns">
+        <section className="dashboard-panel distribution"><div className="panel-heading"><h2>评分分布</h2><ChartLineUp weight="duotone" /></div><div className="bars">{histogram.map((count, index) => <div key={index}><span style={{ height: `${count ? Math.max(6, count / maximum * 100) : 0}%` }} /><b>{index + 1}</b></div>)}</div></section>
+        <section className="dashboard-panel recent-ratings"><h2>最近评分</h2>{ratings.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5).map((entry) => <div key={entry.vndbId}><span>{catalogMap.get(entry.vndbId)?.title || entry.title}</span><strong>{entry.score ?? "-"}</strong></div>)}</section>
+      </div>
     </div>
   );
 }
 
 function Insights({ ratings, catalogMap }: { ratings: LibraryEntry[]; catalogMap: Map<number, CatalogEntry> }) {
   const scored = ratings.filter((entry) => entry.score !== null);
+  const mean = scored.length ? scored.reduce((sum, entry) => sum + (entry.score || 0), 0) / scored.length : 0;
+  const std = scored.length ? Math.sqrt(scored.reduce((sum, entry) => sum + ((entry.score || 0) - mean) ** 2, 0) / scored.length) : 0;
+  const histogram = Array.from({ length: 10 }, (_, index) => scored.filter((entry) => Math.round(entry.score || 0) === index + 1).length);
+  const maximum = Math.max(1, ...histogram);
   const tags = new Map<string, number>();
   for (const entry of scored.filter((value) => (value.score || 0) >= 8)) {
     for (const tag of catalogMap.get(entry.vndbId)?.tags || []) tags.set(tag, (tags.get(tag) || 0) + 1);
   }
   const topTags = Array.from(tags).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const favoriteCount = scored.filter((entry) => (entry.score || 0) >= 9).length;
   return (
-    <div className="page"><header className="page-header"><h1>审美</h1></header>
-      <section className="insight-block"><h2>高分作品</h2><div className="title-cloud">{scored.filter((entry) => (entry.score || 0) >= 9).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 10).map((entry) => <span key={entry.vndbId}>{entry.title} <b>{entry.score}</b></span>)}</div></section>
-      <section className="insight-block"><h2>常见标签</h2><div className="tag-cloud">{topTags.map(([tag, count]) => <span key={tag}>{tag} {count}</span>)}</div></section>
+    <div className="page insights-page"><header className="page-header"><h1>审美分析</h1></header>
+      <section className="insight-metrics">
+        <div><strong>{mean.toFixed(2)}</strong><span>平均评分</span></div>
+        <div><strong>{std.toFixed(2)}</strong><span>评分区分度</span></div>
+        <div><strong>{favoriteCount}</strong><span>高分作品</span></div>
+      </section>
+      <div className="insights-grid">
+        <section className="insight-panel insight-chart"><div className="panel-heading"><h2>评分分布</h2><ChartLineUp weight="duotone" /></div><div className="bars">{histogram.map((count, index) => <div key={index}><span style={{ height: `${count ? Math.max(6, count / maximum * 100) : 0}%` }} /><b>{index + 1}</b></div>)}</div></section>
+        <section className="insight-panel taste-signal"><div className="panel-heading"><h2>评分倾向</h2><Compass weight="duotone" /></div><strong>{mean >= 8 ? "宽" : mean <= 6 ? "严" : "均衡"}</strong></section>
+        <section className="insight-panel insight-favorites"><h2>高分作品</h2><div className="title-cloud">{scored.filter((entry) => (entry.score || 0) >= 9).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 10).map((entry) => <span key={entry.vndbId}>{entry.title} <b>{entry.score}</b></span>)}</div></section>
+        <section className="insight-panel insight-tags"><h2>偏好标签</h2><div className="tag-cloud">{topTags.map(([tag, count]) => <span key={tag}>{tag} {count}</span>)}</div></section>
+      </div>
     </div>
   );
 }
