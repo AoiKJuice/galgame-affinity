@@ -52,6 +52,7 @@ const STATUS_LABELS: Record<LibraryStatus, string> = {
   blacklist: "不感兴趣",
 };
 
+const DEMO_MODEL_MANIFEST = `${import.meta.env.BASE_URL}model/demo/manifest.json`;
 const STANDARD_MODEL_MANIFEST = "https://raw.githubusercontent.com/AoiKJuice/galgame-affinity-models/main/standard/manifest.json";
 const FULL_MODEL_MANIFEST = "https://raw.githubusercontent.com/AoiKJuice/galgame-affinity-models/main/full/manifest.json";
 
@@ -67,7 +68,7 @@ function ModelGate({ onInstalled }: { onInstalled: () => Promise<void> }) {
     setWorking(true);
     setError("");
     try {
-      await installModel("/model/demo/manifest.json", setProgress);
+      await installModel(DEMO_MODEL_MANIFEST, setProgress);
       await onInstalled();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "模型安装失败");
@@ -279,7 +280,7 @@ function ModelPage({ manifest, onInstall }: { manifest: ModelManifest | null; on
     <div className="page"><header className="page-header"><h1>本地模型</h1></header>
       {manifest && <section className="model-current"><Database weight="duotone" /><div><strong>{manifest.tier === "demo" ? "演示模型" : manifest.tier === "standard" ? "手机标准模型" : "桌面完整模型"}</strong><span>{manifest.modelVersion}</span></div><Check weight="bold" /></section>}
       <div className="model-options">
-        <button type="button" onClick={() => install("/model/demo/manifest.json")} disabled={working}><DownloadSimple /><strong>演示模型</strong><span>快速体验</span></button>
+        <button type="button" onClick={() => install(DEMO_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>演示模型</strong><span>快速体验</span></button>
         <button type="button" onClick={() => install(STANDARD_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>手机标准模型</strong><span>完整片库</span></button>
         <button type="button" onClick={() => install(FULL_MODEL_MANIFEST)} disabled={working}><DownloadSimple /><strong>桌面完整模型</strong><span>完整精度</span></button>
       </div>

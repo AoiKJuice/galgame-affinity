@@ -1,11 +1,10 @@
 {
   "name": "游鉴 Galgame 推荐",
   "short_name": "游鉴",
-  "start_url": "/",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#121816",
   "theme_color": "#52c1c8",
   "lang": "zh-CN",
   "icons": []
 }
-

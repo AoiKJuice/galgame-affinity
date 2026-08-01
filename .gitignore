@@ -3,6 +3,7 @@ dist/
 coverage/
 playwright-report/
 test-results/
+.playwright-cli/
 .pytest_tmp/
 output/
 release/
