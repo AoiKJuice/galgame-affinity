@@ -2,6 +2,8 @@
 
 浏览器本地运行的 Galgame 评分推荐系统。公开模型使用 VNDB 显式评分、公开收藏状态和完整作品关系构建；用户资料只保存在当前设备。
 
+在线使用：<https://aoikjuice.com/tools/galgame-affinity/app/>
+
 ## 本地启动
 
 ```powershell
