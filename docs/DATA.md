@@ -30,6 +30,9 @@
 - Bangumi 用户收藏只在浏览器中按用户要求读取，不写入公共模型。
 - 不使用 Steam 评论和 ErogameScape 用户评分。
 - 不分发 VNDB 作品简介和封面文件。
+- 搜索时由浏览器直接调用 VNDB Kana API，补充别名与发行标题匹配；详情页按作品 ID 实时读取简介、厂商、标签和最新封面地址。
+- 封面失效且存在跨站映射时，浏览器可直接读取 Bangumi 条目图片；请求不经过应用服务器。
+- 中文标签来自 `mokurin000/vndb_chinese_translation`，按其 Unlicense 使用，许可证副本见 `docs/LICENSE-vndb-chinese-translation.txt`。
 
 ## 许可证
 

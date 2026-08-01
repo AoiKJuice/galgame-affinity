@@ -1,5 +1,5 @@
 import { activateModel, deleteModelShard, getActiveModel, getModelPackage, getModelShard, saveModelPackage, saveModelShard } from "./storage";
-import type { ModelManifest, ModelPackage, WorkerPackage } from "../model/types";
+import type { CatalogEntry, ModelManifest, ModelPackage, WorkerPackage } from "../model/types";
 
 export interface InstallProgress {
   packageId: string;
@@ -28,6 +28,40 @@ async function decompress(buffer: ArrayBuffer, compression: ModelPackage["compre
   if (!("DecompressionStream" in globalThis)) throw new Error("当前浏览器不支持 gzip 模型解压");
   const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream("gzip"));
   return new Response(stream).arrayBuffer();
+}
+
+function parseCatalog(buffer: ArrayBuffer): CatalogEntry[] {
+  return JSON.parse(new TextDecoder().decode(buffer)) as CatalogEntry[];
+}
+
+export async function loadSearchCatalog(manifestUrl: string): Promise<CatalogEntry[]> {
+  const response = await fetch(manifestUrl, { cache: "no-store" });
+  if (!response.ok) throw new Error(`作品目录下载失败 (${response.status})`);
+  const manifest = (await response.json()) as ModelManifest;
+  if (manifest.schemaVersion !== 1) throw new Error("作品目录格式版本不受支持");
+  const catalogPackage = manifest.packages.find((pkg) => pkg.id === "catalog");
+  if (!catalogPackage) throw new Error("模型清单缺少作品目录");
+
+  const cached = await getModelPackage(manifest.modelVersion, "search-catalog");
+  if (cached && cached.byteLength === catalogPackage.uncompressedSize && (await sha256(cached)) === catalogPackage.sha256) {
+    return parseCatalog(cached);
+  }
+
+  const base = new URL(".", new URL(manifestUrl, window.location.href));
+  const parts: ArrayBuffer[] = [];
+  for (const shard of catalogPackage.shards) {
+    const shardResponse = await fetch(new URL(shard.url, base), { cache: "no-store" });
+    if (!shardResponse.ok) throw new Error(`作品目录下载失败 (${shardResponse.status})`);
+    const bytes = await shardResponse.arrayBuffer();
+    if (bytes.byteLength !== shard.size || (await sha256(bytes)) !== shard.sha256) throw new Error("作品目录分块校验失败");
+    parts.push(bytes);
+  }
+  const unpacked = await decompress(joinBuffers(parts), catalogPackage.compression);
+  if (unpacked.byteLength !== catalogPackage.uncompressedSize || (await sha256(unpacked)) !== catalogPackage.sha256) {
+    throw new Error("作品目录完整性校验失败");
+  }
+  await saveModelPackage(manifest.modelVersion, "search-catalog", unpacked);
+  return parseCatalog(unpacked);
 }
 
 export async function installModel(manifestUrl: string, onProgress?: (progress: InstallProgress) => void): Promise<ModelManifest> {

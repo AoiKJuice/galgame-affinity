@@ -5,6 +5,7 @@ export interface CatalogEntry {
   title: string;
   titleNative?: string | null;
   titleEnglish?: string | null;
+  aliases?: string[];
   coverUrl?: string | null;
   year?: number | null;
   rating?: number | null;

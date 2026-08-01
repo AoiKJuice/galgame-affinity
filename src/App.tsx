@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowClockwise,
+  ArrowLeft,
+  BookmarkSimple,
   Check,
   CloudArrowDown,
   Database,
   DownloadSimple,
+  EyeSlash,
   Moon,
   Plus,
   Sparkle,
@@ -18,7 +21,12 @@ import { Cover } from "./components/Cover";
 import { RatingControl } from "./components/RatingControl";
 import { RecommendationCard } from "./components/RecommendationCard";
 import { importBangumi, importVndb, type ImportResult } from "./lib/imports";
-import { installModel, loadActivePackages, type InstallProgress } from "./lib/model-manager";
+import { searchCatalogEntries } from "./lib/catalog-search";
+import { useCatalogSearch } from "./lib/use-catalog-search";
+import { fetchBangumiSubject, fetchVndbDetails, type BangumiSubject, type VndbDetail } from "./lib/catalog-api";
+import { localizeTags } from "./lib/tag-localization";
+import { useVndbDetails } from "./lib/use-vndb-details";
+import { installModel, loadActivePackages, loadSearchCatalog, type InstallProgress } from "./lib/model-manager";
 import {
   deleteProfile,
   getCollections,
@@ -89,7 +97,7 @@ function Onboarding({ catalog, onDone }: { catalog: CatalogEntry[]; onDone: (pro
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
-  const results = useMemo(() => query.trim().length >= 2 ? catalog.filter((item) => `${item.title} ${item.titleNative || ""}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 12) : [], [catalog, query]);
+  const results = useCatalogSearch(catalog, query, 12);
   const finish = async () => {
     setWorking(true);
     setError("");
@@ -157,35 +165,50 @@ function AddDialog({ item, onClose, onSave }: { item: CatalogEntry; onClose: () 
   );
 }
 
-function RecommendationsPage({ recommendations, collections, revealAdult, onWish, onHide, onRefresh, loading }: {
+function RecommendationsPage({ recommendations, collections, revealAdult, onWish, onHide, onOpen, onRefresh, loading }: {
   recommendations: Recommendation[];
   collections: Collections;
   revealAdult: boolean;
   onWish: (id: number) => void;
   onHide: (id: number) => void;
+  onOpen: (item: CatalogEntry) => void;
   onRefresh: () => void;
   loading: boolean;
 }) {
-  const explicit = recommendations.filter((item) => item.source === "explicit");
-  const explore = recommendations.filter((item) => item.source === "explore");
+  const [hideSequels, setHideSequels] = useState(true);
+  const [hideDerivatives, setHideDerivatives] = useState(true);
+  const details = useVndbDetails(recommendations.map((value) => value.item.id));
+  const visible = recommendations.filter(({ item }) => {
+    if (hideSequels && item.relations.some((relation) => relation.official && relation.type === "preq")) return false;
+    if (hideDerivatives && item.relations.some((relation) => relation.official && ["orig", "par", "alt"].includes(relation.type))) return false;
+    return true;
+  });
+  const explicit = visible.filter((item) => item.source === "explicit");
+  const explore = visible.filter((item) => item.source === "explore");
+  const card = (value: Recommendation) => <RecommendationCard key={value.item.id} recommendation={value} revealAdult={revealAdult} developer={details.get(value.item.id)?.developers[0]?.name} wished={collections.wishlist.includes(value.item.id)} onOpen={() => onOpen(value.item)} onWish={() => onWish(value.item.id)} onHide={() => onHide(value.item.id)} />;
   return (
     <div className="page recommendations-page">
       <header className="page-header"><div><h1>推荐</h1></div><button className="primary-button" type="button" onClick={onRefresh} disabled={loading}><ArrowClockwise />{loading ? "计算中" : "重新生成"}</button></header>
+      <div className="recommendation-filters" aria-label="推荐筛选">
+        <button type="button" className={`toggle-button ${hideSequels ? "active" : ""}`} aria-pressed={hideSequels} onClick={() => setHideSequels((value) => !value)}>隐藏续作</button>
+        <button type="button" className={`toggle-button ${hideDerivatives ? "active" : ""}`} aria-pressed={hideDerivatives} onClick={() => setHideDerivatives((value) => !value)}>隐藏衍生作与后日谈</button>
+      </div>
       {loading && recommendations.length === 0 ? <div className="recommendation-grid skeleton-grid">{Array.from({ length: 8 }, (_, index) => <div className="card-skeleton" key={index} />)}</div> : null}
       {!loading && recommendations.length === 0 ? <div className="empty-state"><Sparkle /><h2>评分还不够</h2><button className="secondary-button" type="button" onClick={onRefresh}>再次计算</button></div> : null}
-      {explicit.length > 0 && <section><h2 className="section-title">为你推荐</h2><div className="recommendation-grid">{explicit.map((value) => <RecommendationCard key={value.item.id} recommendation={value} revealAdult={revealAdult} wished={collections.wishlist.includes(value.item.id)} onWish={() => onWish(value.item.id)} onHide={() => onHide(value.item.id)} />)}</div></section>}
-      {explore.length > 0 && <section><h2 className="section-title">探索</h2><div className="recommendation-grid">{explore.map((value) => <RecommendationCard key={value.item.id} recommendation={value} revealAdult={revealAdult} wished={collections.wishlist.includes(value.item.id)} onWish={() => onWish(value.item.id)} onHide={() => onHide(value.item.id)} />)}</div></section>}
+      {explicit.length > 0 && <section><h2 className="section-title">为你推荐</h2><div className="recommendation-grid">{explicit.map(card)}</div></section>}
+      {explore.length > 0 && <section><h2 className="section-title">探索</h2><div className="recommendation-grid">{explore.map(card)}</div></section>}
     </div>
   );
 }
 
-function LibraryPage({ ratings, catalogMap, collections, revealAdult, onChange, onRemove }: {
+function LibraryPage({ ratings, catalogMap, collections, revealAdult, onChange, onRemove, onOpen }: {
   ratings: LibraryEntry[];
   catalogMap: Map<number, CatalogEntry>;
   collections: Collections;
   revealAdult: boolean;
   onChange: (entry: LibraryEntry) => void;
   onRemove: (id: number) => void;
+  onOpen: (item: CatalogEntry) => void;
 }) {
   const [tab, setTab] = useState<"ratings" | "wishlist" | "hidden">("ratings");
   const [query, setQuery] = useState("");
@@ -207,9 +230,9 @@ function LibraryPage({ ratings, catalogMap, collections, revealAdult, onChange, 
           if (!item) return null;
           return (
             <article className="library-card" key={entry.vndbId}>
-              <Cover item={item} revealAdult={revealAdult} />
+              <button className="card-cover-button" type="button" onClick={() => onOpen(item)} aria-label={`查看${item.title}详情`}><Cover item={item} revealAdult={revealAdult} /></button>
               <div className="library-card-body">
-                <strong title={entry.title}>{entry.title}</strong>
+                <strong title={entry.title}><button className="card-title-button" type="button" onClick={() => onOpen(item)}>{entry.title}</button></strong>
                 {tab === "ratings" && <RatingControl value={entry.score} label={entry.title} onChange={(score) => onChange({ ...entry, score, updatedAt: new Date().toISOString() })} />}
                 <button className="library-remove" type="button" onClick={() => onRemove(entry.vndbId)} aria-label={`删除${entry.title}`}><Trash />移除</button>
               </div>
@@ -217,6 +240,91 @@ function LibraryPage({ ratings, catalogMap, collections, revealAdult, onChange, 
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function cleanDescription(value: string): string {
+  return value
+    .replace(/\[url=[^\]]+\]([^[]+)\[\/url\]/gi, "$1")
+    .replace(/\[\/?(?:b|i|u|s|quote|spoiler|raw)(?:=[^\]]+)?\]/gi, "")
+    .replace(/\\n/g, "\n")
+    .trim();
+}
+
+function DetailPage({ item, catalogMap, rating, recommendation, wished, hidden, onBack, onOpen, onScore, onWish, onHide }: {
+  item: CatalogEntry;
+  catalogMap: Map<number, CatalogEntry>;
+  rating?: LibraryEntry;
+  recommendation?: Recommendation;
+  wished: boolean;
+  hidden: boolean;
+  onBack: () => void;
+  onOpen: (item: CatalogEntry) => void;
+  onScore: (score: number | null) => void;
+  onWish: () => void;
+  onHide: () => void;
+}) {
+  const [metadata, setMetadata] = useState<{ id: number; detail: VndbDetail | null; bangumi: BangumiSubject | null }>({ id: item.id, detail: null, bangumi: null });
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const currentMetadata = metadata.id === item.id ? metadata : { id: item.id, detail: null, bangumi: null };
+  const { detail, bangumi } = currentMetadata;
+  const expanded = expandedId === item.id;
+
+  useEffect(() => {
+    let active = true;
+    void fetchVndbDetails([item.id]).then((value) => {
+      if (active) setMetadata((current) => ({ id: item.id, detail: value.get(item.id) || null, bangumi: current.id === item.id ? current.bangumi : null }));
+    }).catch(() => undefined);
+    const bangumiId = item.bangumiIds?.[0];
+    if (bangumiId) void fetchBangumiSubject(bangumiId).then((value) => {
+      if (active) setMetadata((current) => ({ id: item.id, detail: current.id === item.id ? current.detail : null, bangumi: value }));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [item]);
+
+  const description = cleanDescription(bangumi?.summary || detail?.description || "");
+  const producer = detail?.developers[0]?.name;
+  const tags = [producer || "厂商未知", item.adult ? "NSFW" : "SFW", ...localizeTags((detail?.tags || []).sort((a, b) => b.rating - a.rating).filter((tag) => tag.spoiler === 0).map((tag) => tag.name), 12)];
+  const relations = detail
+    ? detail.relations.map((relation) => ({ ...relation, title: catalogMap.get(relation.id)?.title || relation.title }))
+    : item.relations.map((relation) => ({ id: relation.target, title: catalogMap.get(relation.target)?.title || `v${relation.target}`, type: relation.type, official: relation.official }));
+  const openRelation = (relation: { id: number; title: string }) => {
+    onOpen(catalogMap.get(relation.id) || {
+      id: relation.id,
+      title: relation.title,
+      ratingCount: 0,
+      adult: false,
+      allAgeAvailable: false,
+      platforms: [],
+      tags: [],
+      relations: [],
+    });
+  };
+
+  return (
+    <div className="page detail-page">
+      <button className="detail-back" type="button" onClick={onBack}><ArrowLeft />返回</button>
+      <section className="detail-hero">
+        <div className="detail-cover"><Cover item={{ ...item, coverUrl: bangumi?.images?.large || detail?.imageUrl || item.coverUrl }} revealAdult /></div>
+        <div className="detail-main">
+          <div className="detail-kicker">{item.year || detail?.released?.slice(0, 4) || "年份未知"}{producer ? ` · ${producer}` : ""}</div>
+          <h1>{item.title}</h1>
+          {(item.titleNative || detail?.alttitle) && <div className="detail-native">{item.titleNative || detail?.alttitle}</div>}
+          <div className="detail-tags">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
+          {description && <div className="detail-description-wrap"><p className={expanded ? "detail-description expanded" : "detail-description"}>{description}</p><button type="button" onClick={() => setExpandedId(expanded ? null : item.id)}>{expanded ? "收起" : "展开"}</button></div>}
+          <div className="detail-actions">
+            <button type="button" className={wished ? "active" : ""} aria-pressed={wished} onClick={onWish}><BookmarkSimple weight={wished ? "fill" : "regular"} />想玩</button>
+            <button type="button" className={hidden ? "active danger" : ""} aria-pressed={hidden} onClick={onHide}><EyeSlash />不感兴趣</button>
+          </div>
+        </div>
+        <aside className="detail-score-panel">
+          {recommendation?.affinity != null && <div><span>亲和度</span><strong>{recommendation.affinity}</strong></div>}
+          <div><span>VNDB</span><strong>{(detail?.rating ?? item.rating)?.toFixed(2) || "—"}</strong></div>
+          <RatingControl value={rating?.score ?? null} label={item.title} onChange={onScore} />
+        </aside>
+      </section>
+      {relations.length > 0 && <section className="detail-relations"><h2>关联作品</h2><div>{relations.filter((value) => value.official).slice(0, 12).map((relation) => <button type="button" key={`${relation.id}-${relation.type}`} onClick={() => openRelation(relation)}><strong>{relation.title}</strong><span>{relation.type.toUpperCase()}</span></button>)}</div></section>}
     </div>
   );
 }
@@ -311,7 +419,7 @@ function SettingsPage({ profiles, activeProfile, theme, catalog, onTheme, onCrea
       <section className="settings-section"><h2>导入评分</h2><div className="choice-row"><button className={source === "vndb" ? "active" : ""} type="button" onClick={() => setSource("vndb")}>VNDB</button><button className={source === "bangumi" ? "active" : ""} type="button" onClick={() => setSource("bangumi")}>Bangumi</button></div><div className="inline-form"><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" /><button className="secondary-button" type="button" onClick={runImport} disabled={!username.trim()}><UploadSimple />导入</button></div>{error && <div className="inline-error">{error}</div>}</section>
       {unmapped.length > 0 && <section className="settings-section"><h2>待关联 {unmapped.length}</h2><div className="mapping-list">{unmapped.slice(0, 50).map((sourceItem) => {
         const query = mappingQueries[sourceItem.sourceId] || "";
-        const matches = query.trim().length >= 2 ? catalog.filter((item) => `${item.title} ${item.titleNative || ""} ${item.titleEnglish || ""}`.toLowerCase().includes(query.toLowerCase())).slice(0, 4) : [];
+        const matches = searchCatalogEntries(catalog, query, 4);
         return <article key={sourceItem.sourceId}><strong>{sourceItem.title}</strong><input aria-label={`搜索${sourceItem.title}对应作品`} value={query} onChange={(event) => setMappingQueries((current) => ({ ...current, [sourceItem.sourceId]: event.target.value }))} />{matches.length > 0 && <div className="mapping-results">{matches.map((item) => <button type="button" key={item.id} onClick={() => { onImport([{ vndbId: item.id, title: item.title, score: sourceItem.score, status: sourceItem.status, source: "bangumi", updatedAt: new Date().toISOString() }]); setUnmapped((current) => current.filter((value) => value.sourceId !== sourceItem.sourceId)); }}>{item.title}</button>)}</div>}</article>;
       })}</div></section>}
     </div>
@@ -329,6 +437,8 @@ export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [addItem, setAddItem] = useState<CatalogEntry | null>(null);
+  const [detailItem, setDetailItem] = useState<CatalogEntry | null>(null);
+  const [detailReturnPage, setDetailReturnPage] = useState<Page>("recommendations");
   const [loading, setLoading] = useState(true);
   const [recommending, setRecommending] = useState(false);
   const [undo, setUndo] = useState<{ id: number; timer: number } | null>(null);
@@ -345,7 +455,13 @@ export default function App() {
     worker.current = recommender;
     await new Promise<void>((resolve, reject) => {
       recommender.onmessage = (event: MessageEvent<WorkerResponse>) => {
-        if (event.data.type === "ready") { setCatalog(event.data.catalog); resolve(); }
+        if (event.data.type === "ready") {
+          setCatalog(event.data.catalog);
+          if (installed.manifest.tier === "demo") {
+            void loadSearchCatalog(STANDARD_MODEL_MANIFEST).then(setCatalog).catch(() => undefined);
+          }
+          resolve();
+        }
         if (event.data.type === "error") reject(new Error(event.data.message));
       };
       recommender.postMessage({ type: "init", packages: installed.packages });
@@ -388,7 +504,7 @@ export default function App() {
           if (event.data.type === "error") { current.removeEventListener("message", handler); reject(new Error(event.data.message)); }
         };
         current.addEventListener("message", handler);
-        current.postMessage({ type: "recommend", requestId, ratings, hidden: hiddenOverride ?? collections.hidden, limit: 40 });
+        current.postMessage({ type: "recommend", requestId, ratings, hidden: hiddenOverride ?? collections.hidden, limit: 80 });
       });
       if (sequence === recommendationRequest.current) setRecommendations(results);
     } finally { if (sequence === recommendationRequest.current) setRecommending(false); }
@@ -432,6 +548,23 @@ export default function App() {
     if (collections.hidden.includes(id) || collections.wishlist.includes(id)) await persistCollections({ hidden: collections.hidden.filter((value) => value !== id), wishlist: collections.wishlist.filter((value) => value !== id) });
   };
 
+  const openDetail = (item: CatalogEntry) => {
+    if (page !== "detail") setDetailReturnPage(page);
+    setDetailItem(item);
+    setPage("detail");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const toggleHiddenDetail = async (id: number) => {
+    if (collections.hidden.includes(id)) {
+      const next = { ...collections, hidden: collections.hidden.filter((value) => value !== id) };
+      await persistCollections(next);
+      await generateRecommendations(next.hidden);
+      return;
+    }
+    await hideRecommendation(id);
+  };
+
   if (loading) return <div className="app-loading"><span /></div>;
   if (!model) return <ModelGate onInstalled={loadModel} />;
   if (!activeProfile) return <Onboarding catalog={catalog} onDone={async (profile, imported) => { await saveProfile(profile); await saveRatings(profile.id, imported); setProfiles([profile]); setProfileId(profile.id); await setPreference("activeProfile", profile.id); }} />;
@@ -440,11 +573,12 @@ export default function App() {
     <>
       <AppShell page={page} onPage={setPage} profile={activeProfile} profiles={profiles} onProfile={(id) => { setProfileId(id); void setPreference("activeProfile", id); }} catalog={catalog} onAdd={setAddItem} theme={theme} onToggleTheme={() => { const value = theme === "light" ? "dark" : "light"; setTheme(value); void setPreference("theme", value); }}>
         {page === "dashboard" && <Dashboard profile={activeProfile} ratings={ratings} recommendations={recommendations} catalogMap={catalogMap} revealAdult onRecommend={() => { setPage("recommendations"); void generateRecommendations(); }} />}
-        {page === "recommendations" && <RecommendationsPage recommendations={recommendations} collections={collections} revealAdult onWish={(id) => void persistCollections({ ...collections, wishlist: collections.wishlist.includes(id) ? collections.wishlist.filter((value) => value !== id) : [...collections.wishlist, id] })} onHide={(id) => void hideRecommendation(id)} onRefresh={() => void generateRecommendations()} loading={recommending} />}
-        {page === "library" && <LibraryPage ratings={ratings} catalogMap={catalogMap} collections={collections} revealAdult onChange={(entry) => void saveEntry(entry)} onRemove={(id) => void removeEntry(id)} />}
+        {page === "recommendations" && <RecommendationsPage recommendations={recommendations} collections={collections} revealAdult onWish={(id) => void persistCollections({ ...collections, wishlist: collections.wishlist.includes(id) ? collections.wishlist.filter((value) => value !== id) : [...collections.wishlist, id] })} onHide={(id) => void hideRecommendation(id)} onOpen={openDetail} onRefresh={() => void generateRecommendations()} loading={recommending} />}
+        {page === "library" && <LibraryPage ratings={ratings} catalogMap={catalogMap} collections={collections} revealAdult onChange={(entry) => void saveEntry(entry)} onRemove={(id) => void removeEntry(id)} onOpen={openDetail} />}
         {page === "insights" && <Insights ratings={ratings} catalogMap={catalogMap} />}
         {page === "model" && <ModelPage manifest={model} onInstall={async (url, callback) => { await installModel(url, callback); await loadModel(); setRecommendations([]); }} />}
         {page === "settings" && <SettingsPage profiles={profiles} activeProfile={activeProfile} theme={theme} catalog={catalog} onTheme={(value) => { setTheme(value); void setPreference("theme", value); }} onCreate={(name) => { const now = new Date().toISOString(); const profile = { id: randomId(), name: name || `本地资料 ${profiles.length + 1}`, createdAt: now, updatedAt: now }; void saveProfile(profile); setProfiles((current) => [...current, profile]); setProfileId(profile.id); void setPreference("activeProfile", profile.id); }} onActivate={(id) => { setProfileId(id); void setPreference("activeProfile", id); }} onDelete={(id) => { void deleteProfile(id); const next = profiles.filter((profile) => profile.id !== id); setProfiles(next); if (profileId === id) { const nextId = next[0]?.id || null; setProfileId(nextId); void setPreference("activeProfile", nextId); } }} onImport={(entries) => { void saveRatings(activeProfile.id, entries); setRatings((current) => [...current.filter((entry) => !entries.some((value) => value.vndbId === entry.vndbId)), ...entries]); }} />}
+        {page === "detail" && detailItem && <DetailPage item={catalogMap.get(detailItem.id) || detailItem} catalogMap={catalogMap} rating={ratings.find((entry) => entry.vndbId === detailItem.id)} recommendation={recommendations.find((entry) => entry.item.id === detailItem.id)} wished={collections.wishlist.includes(detailItem.id)} hidden={collections.hidden.includes(detailItem.id)} onBack={() => setPage(detailReturnPage)} onOpen={openDetail} onScore={(score) => void saveEntry({ vndbId: detailItem.id, title: detailItem.title, score, status: "finished", source: "manual", updatedAt: new Date().toISOString() })} onWish={() => void persistCollections({ ...collections, wishlist: collections.wishlist.includes(detailItem.id) ? collections.wishlist.filter((value) => value !== detailItem.id) : [...collections.wishlist, detailItem.id] })} onHide={() => void toggleHiddenDetail(detailItem.id)} />}
       </AppShell>
       {addItem && <AddDialog item={addItem} onClose={() => setAddItem(null)} onSave={(entry) => void saveEntry(entry)} />}
       {undo && <div className="undo-toast" role="status"><span>已标记不感兴趣</span><button type="button" onClick={() => void undoHidden()}>撤回</button></div>}

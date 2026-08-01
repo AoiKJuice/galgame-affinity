@@ -277,7 +277,7 @@ function matchedTags(item: CatalogEntry, ratings: LibraryEntry[]): string[] {
   const liked = ratings.filter((entry) => (entry.score || 0) >= 8).map((entry) => state.catalogMap.get(entry.vndbId)).filter(Boolean) as CatalogEntry[];
   const counts = new Map<string, number>();
   for (const source of liked) for (const tag of source.tags || []) counts.set(tag, (counts.get(tag) || 0) + 1);
-  return (item.tags || []).filter((tag) => counts.has(tag)).sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0)).slice(0, 3);
+  return (item.tags || []).filter((tag) => counts.has(tag)).sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0)).slice(0, 10);
 }
 
 function vectorScores(model: DenseVectors | null, ratings: LibraryEntry[], hidden: Set<number>, excluded: Set<number>): Map<number, number> {

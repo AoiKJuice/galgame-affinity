@@ -16,9 +16,10 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { CatalogEntry, Profile } from "../model/types";
+import { useCatalogSearch } from "../lib/use-catalog-search";
 import { Cover } from "./Cover";
 
-export type Page = "dashboard" | "recommendations" | "library" | "insights" | "model" | "settings";
+export type Page = "dashboard" | "recommendations" | "library" | "insights" | "model" | "settings" | "detail";
 
 const NAV: Array<{ id: Page; label: string; icon: typeof House }> = [
   { id: "dashboard", label: "概览", icon: House },
@@ -53,9 +54,7 @@ export function AppShell({
 }) {
   const [query, setQuery] = React.useState("");
   const [profileMenuOpen, setProfileMenuOpen] = React.useState(false);
-  const results = query.trim().length >= 2
-    ? catalog.filter((item) => `${item.title} ${item.titleNative || ""} ${item.titleEnglish || ""}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8)
-    : [];
+  const results = useCatalogSearch(catalog, query);
   return (
     <div className="app-shell">
       <aside className="side-nav">
