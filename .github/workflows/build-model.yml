@@ -1,0 +1,26 @@
+name: build-vndb-model
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "35 2 * * *"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e .
+      - run: galrec download --output .data
+      - run: galrec build-all --archive .data/vndb-db-latest.tar.zst --votes .data/vndb-votes-latest.gz --connector .data/vndb-id-connector.json --output artifacts/full --tier full --implicit svd
+      - run: galrec evaluate --ratings artifacts/full/explicit-clean.parquet --output artifacts/full/evaluation.json --max-users 2000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vndb-browser-model
+          path: artifacts/full/release
+          retention-days: 14

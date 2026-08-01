@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "galgame-affinity"
+version = "0.1.0"
+description = "VNDB audit, training and browser artifact builder for Youjian"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy==2.4.6",
+  "polars==1.42.1",
+  "scipy==1.18.0",
+  "zstandard==0.25.0",
+]
+
+[project.optional-dependencies]
+als = ["implicit==0.7.2"]
+test = ["pytest==9.1.1"]
+
+[project.scripts]
+galrec = "galrec.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["galrec"]
+
+[tool.pytest.ini_options]
+testpaths = ["training_tests"]
+addopts = "-q --basetemp=.pytest_tmp"
